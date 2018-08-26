@@ -19,10 +19,11 @@
 package myModel
 
 import (
-	"errors"
-	"github.com/philopon/go-toposort"
 	"reflect"
 	"sort"
+	"github.com/SOF3/go-stable-toposort"
+	"strings"
+	"fmt"
 )
 
 type Schema struct {
@@ -47,31 +48,23 @@ func (schema *Schema) mustGetTable(name string) *MainTable {
 }
 func (schema *Schema) getSortedTables() []*MainTable {
 	if schema.graphOutdated {
-		graph := toposort.NewGraph(len(schema.Tables))
-		tables := make([]string, 0, len(schema.Tables))
+		tables := make([]stableToposort.Node, 0, len(schema.Tables))
 		for _, table := range schema.Tables {
-			tables = append(tables, table.Name)
+			tables = append(tables, table)
 		}
-		sort.Strings(tables)
-		for _, table := range tables {
-			graph.AddNode(table)
-		}
-		for _, dependent := range schema.Tables {
-			for _, dependency := range schema.Tables {
-				if dependent != dependency && dependent.Depends(dependency) {
-					graph.AddEdge(dependency.Name, dependent.Name)
-				}
-			}
+		sort.SliceStable(tables, func(i, j int) bool {
+			return strings.Compare(tables[i].(*MainTable).Name, tables[j].(*MainTable).Name) == -1
+		}) // stabilize the table order first
+		result, err := stableToposort.Sort(tables)
+
+		if err != nil {
+			panic(fmt.Sprintf("reference cycle detected: %v", err))
+			return nil
 		}
 
-		schema.sortedList = []*MainTable{}
-
-		names, ok := graph.Toposort()
-		if !ok {
-			panic(errors.New("cyclic dependency detected"))
-		}
-		for _, name := range names {
-			schema.sortedList = append(schema.sortedList, schema.Tables[name])
+		schema.sortedList = make([]*MainTable, len(result))
+		for k, v := range result{
+			schema.sortedList[k] = v.(*MainTable)
 		}
 	}
 
@@ -154,6 +147,10 @@ func (table *MainTable) FindEdgeByPeerTable(peerTable string) *Edge {
 		}
 	}
 	return nil
+}
+
+func (table *MainTable) Before(node stableToposort.Node) bool {
+	return node.(*MainTable).Depends(table)
 }
 
 type MysqlField struct {

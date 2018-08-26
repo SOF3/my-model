@@ -40,6 +40,7 @@ const (
 	EdgeTypeOneMulti
 	EdgeTypeOneOne
 	EdgeTypeOneOneParent
+	EdgeTypeUnknownParent
 )
 
 func (schema *Schema) computeEdges() error {
@@ -51,15 +52,18 @@ func (schema *Schema) computeEdges() error {
 		if table.knownParent != nil {
 			if table.FindEdgeByPeerTable(table.knownParent.Name) == nil {
 				edges = append(edges, &Edge{
-					Name:      "_parent_",
+					Name:      "Parent__",
 					Type:      elvis.Ternary(table.knownParent.FindEdgeByPeerTable(table.Name).Type == EdgeTypeOneMulti, EdgeTypeMultiOneParent, EdgeTypeOneOneParent).(EdgeType),
 					PeerTable: table.knownParent.Name,
 				})
 			}
 		}
 		for _, edge := range edges {
-
 			peer := schema.mustGetTable(edge.PeerTable)
+
+			if edge.Type == EdgeTypeUnknownParent {
+				edge.Type = elvis.Ternary(table.knownParent.FindEdgeByPeerTable(table.Name).Type == EdgeTypeOneMulti, EdgeTypeMultiOneParent, EdgeTypeOneOneParent).(EdgeType)
+			}
 
 			switch edge.Type {
 			case EdgeTypeMultiMulti:
@@ -103,7 +107,7 @@ func (schema *Schema) computeEdges() error {
 				for _, key := range keys {
 					originalField := *peer.FindField(key) // the definition is in the peer
 					field := originalField
-					field.Name = peer.Name + "_" + field.Name
+					field.Name = edge.Name + "_" + field.Name
 					field.AutoIncrement = false
 					foreign.SourceColumns = append(foreign.SourceColumns, field.Name)
 					foreign.RefColumns = append(foreign.RefColumns, key)
@@ -152,7 +156,6 @@ func (schema *Schema) computeEdges() error {
 						foreign.OnDelete = elvis.Ternary(field.Nullable, ReferenceOptionSetNull, ReferenceOptionRestrict).(ReferenceOption)
 					}
 					table.SimpleFields = append(table.SimpleFields, &field)
-					println("Copied parent primary key", field.Name, "into", table.Name)
 				}
 				table.ForeignKeys = append(table.ForeignKeys, foreign)
 			}

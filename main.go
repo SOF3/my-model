@@ -58,15 +58,15 @@ func Generate(config GeneratorConfig, seeds []reflect.Type) error {
 
 	schema.OutputSql(config)
 
-	file, err := os.Create("schema.json")
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+	// file, err := os.Create("schema.json")
+	// if err != nil {
+	// 	return err
+	// }
+	// defer file.Close()
 
-	encoder := json.NewEncoder(file)
+	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "\t")
-	err = encoder.Encode(schema)
+	err := encoder.Encode(schema)
 	if err != nil {
 		return err
 	}

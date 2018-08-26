@@ -21,7 +21,6 @@ package myModel
 import (
 	"errors"
 	"fmt"
-	"github.com/hoop33/go-elvis"
 	"reflect"
 	"strings"
 )
@@ -57,20 +56,15 @@ func (schema *Schema) yieldTable(table *MainTable) error {
 
 		isComplex := !isSimpleStruct(fieldType)
 
-		if isPointer && !isComplex {
-			return errors.New("field must not be pointer to non-complex type")
-		}
-
 		if _, exists := tag.Lookup("parent"); exists {
-			if !isPointer || isSlice || !isComplex {
+			// parent reference; the other type must contain this type directly or as a non-pointer slice
+			if !(isPointer && !isSlice && isComplex) {
 				return errors.New("parent column must be a pointer to a non-slice complex type")
 			}
-			// parent reference; the other type must contain this type without pointer
-			parent := schema.mustGetTable(fieldType.Name())
 			table.Edges = append(table.Edges, &Edge{
 				Name:      field.Name,
 				PeerTable: fieldType.Name(),
-				Type:      elvis.Ternary(parent.FindEdgeByPeerTable(table.Name).Type == EdgeTypeOneMulti, EdgeTypeMultiOneParent, EdgeTypeOneOneParent).(EdgeType),
+				Type:      EdgeTypeUnknownParent,
 			})
 
 			keys := schema.mustGetTable(fieldType.Name()).PrimaryKeys
@@ -91,7 +85,7 @@ func (schema *Schema) yieldTable(table *MainTable) error {
 				}
 				table.CompositeKeys[indexName] = append(table.CompositeKeys[indexName], renamedKeys...)
 			}
-		} else if isPointer {
+		} else if isComplex && isPointer {
 			if isSlice {
 				// multi-multi edge, create an anonymous table for storing edges
 				table.Edges = append(table.Edges, &Edge{
@@ -143,9 +137,7 @@ func (schema *Schema) yieldTable(table *MainTable) error {
 				Name: field.Name,
 				Type: mysqlType,
 			}
-			if _, exists := tag.Lookup("nullable"); exists {
-				field.Nullable = true
-			}
+			field.Nullable = isPointer
 			if _, exists := tag.Lookup("primaryKey"); exists {
 				table.PrimaryKeys = append(table.PrimaryKeys, field.Name)
 				if _, exists := tag.Lookup("autoIncrement"); exists {
